@@ -4,6 +4,7 @@
 
 package com.example.finora
 
+import androidx.compose.material.icons.filled.CalendarMonth
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -32,6 +33,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -86,7 +88,9 @@ class MainActivity : ComponentActivity() {
         TransactionViewModel.Factory(
             TransactionRepository(
                 transactionDao = database.transactionDao(),
-                budgetDao = database.budgetDao()
+                budgetDao = database.budgetDao(),
+                recurringTransactionDao = database.recurringTransactionDao(),
+                database = database
             )
         )
     }
@@ -136,6 +140,7 @@ private fun FinoraApp(viewModel: TransactionViewModel) {
         },
         bottomBar = {
             NavigationBar(containerColor = Color.White) {
+
                 NavigationBarItem(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
@@ -184,9 +189,22 @@ private fun FinoraApp(viewModel: TransactionViewModel) {
                     label = { Text("Budgets") }
                 )
 
+                // NEW: Recurring Transactions tab
                 NavigationBarItem(
                     selected = selectedTab == 4,
                     onClick = { selectedTab = 4 },
+                    icon = {
+                        Icon(
+                            Icons.Default.Repeat,
+                            contentDescription = null
+                        )
+                    },
+                    label = { Text("Recurring") }
+                )
+
+                NavigationBarItem(
+                    selected = selectedTab == 5,
+                    onClick = { selectedTab = 5 },
                     icon = {
                         Icon(
                             Icons.Default.Person,
@@ -198,7 +216,9 @@ private fun FinoraApp(viewModel: TransactionViewModel) {
             }
         }
     ) { innerPadding ->
+
         when (selectedTab) {
+
             0 -> DashboardScreen(
                 modifier = Modifier.padding(innerPadding),
                 balance = balance,
@@ -224,7 +244,13 @@ private fun FinoraApp(viewModel: TransactionViewModel) {
                 viewModel = viewModel
             )
 
-            else -> PlaceholderScreen(
+            // NEW: Recurring Transactions screen
+            4 -> RecurringTransactionsScreen(
+                modifier = Modifier.padding(innerPadding),
+                viewModel = viewModel
+            )
+
+            5 -> PlaceholderScreen(
                 modifier = Modifier.padding(innerPadding),
                 title = "Profile",
                 message = "Your profile and settings will appear here."
@@ -265,49 +291,60 @@ private fun DashboardScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
+            .background(FinoraBackground)
             .padding(horizontal = 20.dp),
-        contentPadding = PaddingValues(vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        contentPadding = PaddingValues(
+            top = 24.dp,
+            bottom = 32.dp
+        ),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
+        // Header
         item {
             Column {
                 Text(
-                    "Hello, welcome back 👋",
-                    color = Color.Gray
+                    text = "Welcome back 👋",
+                    color = Color.Gray,
+                    fontSize = 14.sp
                 )
+
                 Text(
-                    "Finora",
+                    text = "Your finances",
+                    color = FinoraGreen,
                     fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = FinoraGreen
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
 
+        // Balance
         item {
-            BalanceCard(balance)
+            BalanceCard(balance = balance)
         }
 
+        // Income and expense summary
         item {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 SummaryCard(
-                    "Income",
-                    income,
-                    IncomeGreen,
-                    Modifier.weight(1f)
+                    title = "Income",
+                    amount = income,
+                    color = IncomeGreen,
+                    modifier = Modifier.weight(1f)
                 )
 
                 SummaryCard(
-                    "Expenses",
-                    expenses,
-                    ExpenseRed,
-                    Modifier.weight(1f)
+                    title = "Expenses",
+                    amount = expenses,
+                    color = ExpenseRed,
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
 
+        // Recent transactions heading
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -315,30 +352,98 @@ private fun DashboardScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Recent Transactions",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
+                    text = "Recent transactions",
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF252525)
                 )
 
                 TextButton(onClick = onAddTransaction) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        tint = FinoraGreen
+                    )
+
+                    Spacer(Modifier.width(4.dp))
+
                     Text(
-                        "Add new",
+                        text = "Add",
                         color = FinoraGreen
                     )
                 }
             }
         }
 
+        // Recent transactions list
         if (transactions.isEmpty()) {
             item {
-                EmptyTransactions()
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.White
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ReceiptLong,
+                            contentDescription = null,
+                            tint = Color.LightGray,
+                            modifier = Modifier.size(42.dp)
+                        )
+
+                        Spacer(Modifier.height(10.dp))
+
+                        Text(
+                            text = "No transactions yet",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 16.sp
+                        )
+
+                        Spacer(Modifier.height(6.dp))
+
+                        Text(
+                            text = "Add your first transaction to get started.",
+                            color = Color.Gray,
+                            fontSize = 13.sp
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+
+                        Button(
+                            onClick = onAddTransaction,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = FinoraGreen
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = null
+                            )
+
+                            Spacer(Modifier.width(6.dp))
+
+                            Text("Add transaction")
+                        }
+                    }
+                }
             }
         } else {
             items(
-                transactions.take(5),
+                items = transactions
+                    .sortedByDescending { it.date }
+                    .take(5),
                 key = { it.id }
-            ) {
-                TransactionRow(it)
+            ) { transaction ->
+                TransactionRow(
+                    transaction = transaction
+                )
             }
         }
     }
@@ -904,6 +1009,10 @@ private fun AnalyticsScreen(
     }
 }
 
+// -----------------------------------------------------------------------------
+// ANALYTICS CHART COMPONENTS
+// -----------------------------------------------------------------------------
+
 @Composable
 private fun AnalyticsCard(
     title: String,
@@ -911,19 +1020,25 @@ private fun AnalyticsCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp
         )
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                title,
+                text = title,
                 fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF26352D)
             )
 
             content()
@@ -936,90 +1051,97 @@ private fun MonthlyBarChart(
     data: List<MonthData>,
     selectedMonth: String
 ) {
-    val maxValue = (data.maxOfOrNull {
+    val maxAmount = data.maxOfOrNull {
         maxOf(it.income, it.expenses)
-    } ?: 0.0).coerceAtLeast(1.0)
+    }?.coerceAtLeast(1.0) ?: 1.0
 
     Column(
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(190.dp)
     ) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(170.dp)
-        ) {
-            val groupWidth = size.width / data.size
-            val barWidth = groupWidth * 0.25f
-            val chartHeight = size.height - 8.dp.toPx()
-
-            data.forEachIndexed { index, month ->
-                val centerX =
-                    groupWidth * index + groupWidth / 2f
-
-                val incomeHeight =
-                    (month.income / maxValue * chartHeight).toFloat()
-
-                val expenseHeight =
-                    (month.expenses / maxValue * chartHeight).toFloat()
-
-                drawRoundRect(
-                    color = IncomeGreen,
-                    topLeft = Offset(
-                        centerX - barWidth - 2.dp.toPx(),
-                        chartHeight - incomeHeight
-                    ),
-                    size = Size(barWidth, incomeHeight),
-                    cornerRadius =
-                        androidx.compose.ui.geometry.CornerRadius(
-                            5.dp.toPx()
-                        )
-                )
-
-                drawRoundRect(
-                    color = ExpenseRed,
-                    topLeft = Offset(
-                        centerX + 2.dp.toPx(),
-                        chartHeight - expenseHeight
-                    ),
-                    size = Size(barWidth, expenseHeight),
-                    cornerRadius =
-                        androidx.compose.ui.geometry.CornerRadius(
-                            5.dp.toPx()
-                        )
-                )
-
-                if (month.key == selectedMonth) {
-                    drawLine(
-                        color = FinoraGreen.copy(alpha = 0.35f),
-                        start = Offset(centerX, 0f),
-                        end = Offset(centerX, chartHeight),
-                        strokeWidth = 1.dp.toPx()
-                    )
-                }
-            }
-        }
-
         Row(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.Bottom
         ) {
             data.forEach { month ->
-                Text(
-                    text = month.label,
-                    modifier = Modifier.weight(1f),
-                    fontSize = 11.sp,
-                    color = if (month.key == selectedMonth) {
-                        FinoraGreen
-                    } else {
-                        Color.Gray
-                    },
-                    fontWeight = if (month.key == selectedMonth) {
-                        FontWeight.Bold
-                    } else {
-                        FontWeight.Normal
-                    },
-                    textAlign =
-                        androidx.compose.ui.text.style.TextAlign.Center
-                )
+                val incomeHeight =
+                    (month.income / maxAmount).toFloat()
+                        .coerceIn(0f, 1f)
+
+                val expenseHeight =
+                    (month.expenses / maxAmount).toFloat()
+                        .coerceIn(0f, 1f)
+
+                val isSelected = month.key == selectedMonth
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Bottom
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(12.dp)
+                                .fillMaxHeight(incomeHeight)
+                                .background(
+                                    color = IncomeGreen.copy(
+                                        alpha = if (isSelected) 1f else 0.75f
+                                    ),
+                                    shape = RoundedCornerShape(
+                                        topStart = 5.dp,
+                                        topEnd = 5.dp
+                                    )
+                                )
+                        )
+
+                        Spacer(Modifier.width(4.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .width(12.dp)
+                                .fillMaxHeight(expenseHeight)
+                                .background(
+                                    color = ExpenseRed.copy(
+                                        alpha = if (isSelected) 1f else 0.75f
+                                    ),
+                                    shape = RoundedCornerShape(
+                                        topStart = 5.dp,
+                                        topEnd = 5.dp
+                                    )
+                                )
+                        )
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Text(
+                        text = month.label,
+                        fontSize = 11.sp,
+                        fontWeight = if (isSelected) {
+                            FontWeight.Bold
+                        } else {
+                            FontWeight.Normal
+                        },
+                        color = if (isSelected) {
+                            FinoraGreen
+                        } else {
+                            Color.Gray
+                        }
+                    )
+                }
             }
         }
     }
@@ -1035,35 +1157,34 @@ private fun DonutChart(
     Canvas(modifier = modifier) {
         if (total <= 0.0) return@Canvas
 
-        val strokeWidth = 26.dp.toPx()
-        var startAngle = -90f
+        val strokeWidth = size.minDimension * 0.18f
 
-        val diameter = minOf(size.width, size.height)
-        val arcSize = Size(diameter, diameter)
-
+        val diameter = size.minDimension - strokeWidth
         val topLeft = Offset(
-            (size.width - diameter) / 2f,
-            (size.height - diameter) / 2f
+            x = (size.width - diameter) / 2f,
+            y = (size.height - diameter) / 2f
         )
 
+        var startAngle = -90f
+
         data.forEachIndexed { index, item ->
-            val sweep =
+            val sweepAngle =
                 (item.amount / total * 360.0).toFloat()
 
             drawArc(
                 color = ChartColors[index % ChartColors.size],
                 startAngle = startAngle,
-                sweepAngle = sweep,
+                sweepAngle = sweepAngle,
                 useCenter = false,
                 topLeft = topLeft,
-                size = arcSize,
+                size = Size(diameter, diameter),
                 style = Stroke(
                     width = strokeWidth,
                     cap = StrokeCap.Butt
                 )
             )
 
-            startAngle += sweep
+            startAngle += sweepAngle
         }
     }
 }
@@ -1077,7 +1198,7 @@ private fun ChartLegend(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            Modifier
+            modifier = Modifier
                 .size(10.dp)
                 .background(
                     color,
@@ -1085,17 +1206,15 @@ private fun ChartLegend(
                 )
         )
 
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(7.dp))
 
         Text(
-            label,
+            text = label,
             fontSize = 12.sp,
             color = Color.Gray
         )
     }
 }
-
-
 
 // -----------------------------------------------------------------------------
 // BUDGETS
@@ -1208,7 +1327,10 @@ private fun BudgetsScreen(
 
                 Text(
                     selectedMonth.format(
-                        java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())
+                        java.time.format.DateTimeFormatter.ofPattern(
+                            "MMMM yyyy",
+                            Locale.getDefault()
+                        )
                     ),
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp
@@ -1384,6 +1506,7 @@ private fun BudgetCard(
                         tint = FinoraGreen
                     )
                 }
+
                 IconButton(onClick = onDelete) {
                     Icon(
                         Icons.Default.Delete,
@@ -1407,6 +1530,7 @@ private fun BudgetCard(
                         color = if (exceeded) ExpenseRed else Color(0xFF252525)
                     )
                 }
+
                 Column(horizontalAlignment = Alignment.End) {
                     Text("Budget", color = Color.Gray, fontSize = 12.sp)
                     Text(
@@ -1436,9 +1560,13 @@ private fun BudgetCard(
                     color = if (exceeded) ExpenseRed else Color.Gray,
                     fontSize = 12.sp
                 )
+
                 Text(
-                    if (exceeded) "${formatINR(spending - budget.amount)} over budget"
-                    else "${formatINR(remaining)} left",
+                    if (exceeded) {
+                        "${formatINR(spending - budget.amount)} over budget"
+                    } else {
+                        "${formatINR(remaining)} left"
+                    },
                     color = if (exceeded) ExpenseRed else FinoraGreen,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
@@ -1458,10 +1586,14 @@ private fun BudgetEditorDialog(
     var category by remember(budget?.id) {
         mutableStateOf(budget?.category ?: "")
     }
+
     var amountText by remember(budget?.id) {
         mutableStateOf(budget?.amount?.toString() ?: "")
     }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    var errorMessage by remember {
+        mutableStateOf<String?>(null)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1472,14 +1604,20 @@ private fun BudgetEditorDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text(
                     YearMonth.parse(month).format(
-                        java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())
+                        java.time.format.DateTimeFormatter.ofPattern(
+                            "MMMM yyyy",
+                            Locale.getDefault()
+                        )
                     ),
                     color = Color.Gray,
                     fontSize = 13.sp
                 )
+
                 OutlinedTextField(
                     value = category,
                     onValueChange = {
@@ -1487,10 +1625,13 @@ private fun BudgetEditorDialog(
                         errorMessage = null
                     },
                     label = { Text("Category") },
-                    placeholder = { Text("e.g. Food, Travel, Bills") },
+                    placeholder = {
+                        Text("e.g. Food, Travel, Bills")
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = {
@@ -1504,6 +1645,7 @@ private fun BudgetEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
                 errorMessage?.let {
                     Text(
                         it,
@@ -1517,11 +1659,17 @@ private fun BudgetEditorDialog(
             TextButton(
                 onClick = {
                     val amount = amountText.toDoubleOrNull()
+
                     when {
                         category.isBlank() ->
                             errorMessage = "Enter a category."
-                        amount == null || !amount.isFinite() || amount <= 0.0 ->
-                            errorMessage = "Enter a valid amount greater than zero."
+
+                        amount == null ||
+                                !amount.isFinite() ||
+                                amount <= 0.0 ->
+                            errorMessage =
+                                "Enter a valid amount greater than zero."
+
                         else -> onSave(category.trim(), amount)
                     }
                 }
@@ -1706,7 +1854,7 @@ private fun EmptyTransactions() {
 }
 
 // -----------------------------------------------------------------------------
-// ADD TRANSACTION
+// ADD TRANSACTION DIALOG
 // -----------------------------------------------------------------------------
 
 @Composable
@@ -1959,3 +2107,4 @@ private fun monthLabel(calendar: Calendar): String {
         Locale.getDefault()
     ).format(calendar.time)
 }
+
