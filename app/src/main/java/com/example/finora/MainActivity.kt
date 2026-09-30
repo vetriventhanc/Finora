@@ -118,6 +118,12 @@ private fun FinoraApp(viewModel: TransactionViewModel) {
         AppLockStore(context)
     }
 
+    val budgets by viewModel.budgets
+        .collectAsStateWithLifecycle()
+
+    val savingsGoals by viewModel.savingsGoals
+        .collectAsStateWithLifecycle()
+
     var isLocked by remember {
         mutableStateOf(
             appLockStore.isEnabled() && appLockStore.isPinSet()
@@ -267,11 +273,12 @@ private fun FinoraApp(viewModel: TransactionViewModel) {
 
             0 -> DashboardScreen(
                 modifier = Modifier.padding(innerPadding),
-                balance = balance,
-                income = totalIncome,
-                expenses = totalExpenses,
                 transactions = transactions,
-                onAddTransaction = { showAddDialog = true }
+                budgets = budgets,
+                savingsGoals = savingsGoals,
+                onAddTransaction = {
+                    showAddDialog = true
+                }
             )
 
             1 -> TransactionsScreen(
