@@ -42,6 +42,7 @@ android {
 
 dependencies {
     // Existing Compose dependencies
+    implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.compose.material:material-icons-extended")
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(platform(libs.androidx.compose.bom))

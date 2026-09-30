@@ -4,6 +4,11 @@
 
 package com.example.finora
 
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.material.icons.filled.CalendarMonth
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -108,6 +113,35 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun FinoraApp(viewModel: TransactionViewModel) {
+    val context = LocalContext.current
+    val appLockStore = remember {
+        AppLockStore(context)
+    }
+
+    var isLocked by remember {
+        mutableStateOf(
+            appLockStore.isEnabled() && appLockStore.isPinSet()
+        )
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner, appLockStore) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP &&
+                appLockStore.isEnabled() &&
+                appLockStore.isPinSet()
+            ) {
+                isLocked = true
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
     var selectedTab by remember { mutableIntStateOf(0) }
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -140,6 +174,18 @@ private fun FinoraApp(viewModel: TransactionViewModel) {
         },
         bottomBar = {
             NavigationBar(containerColor = Color.White) {
+
+                NavigationBarItem(
+                    selected = selectedTab == 4,
+                    onClick = { selectedTab = 4 },
+                    icon = {
+                        Icon(
+                            Icons.Default.AccountBalanceWallet,
+                            contentDescription = null
+                        )
+                    },
+                    label = { Text("Savings") }
+                )
 
                 NavigationBarItem(
                     selected = selectedTab == 0,
@@ -245,15 +291,18 @@ private fun FinoraApp(viewModel: TransactionViewModel) {
             )
 
             // NEW: Recurring Transactions screen
-            4 -> RecurringTransactionsScreen(
+            4 -> SavingsGoalsScreen(
                 modifier = Modifier.padding(innerPadding),
                 viewModel = viewModel
             )
 
-            5 -> PlaceholderScreen(
+            5 -> RecurringTransactionsScreen(
                 modifier = Modifier.padding(innerPadding),
-                title = "Profile",
-                message = "Your profile and settings will appear here."
+                viewModel = viewModel
+            )
+
+            6 -> AppLockSettingsScreen(
+                modifier = Modifier.padding(innerPadding)
             )
         }
     }
@@ -270,6 +319,19 @@ private fun FinoraApp(viewModel: TransactionViewModel) {
                     note = note
                 )
                 showAddDialog = false
+            }
+        )
+    }
+
+    if (isLocked) {
+        FinoraLockScreen(
+            onUnlock = { enteredPin ->
+                if (appLockStore.verifyPin(enteredPin)) {
+                    isLocked = false
+                    true
+                } else {
+                    false
+                }
             }
         )
     }
@@ -2647,6 +2709,255 @@ private fun AddTransactionDialog(
 // -----------------------------------------------------------------------------
 
 @Composable
+private fun AppLockSettingsScreen(
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val appLockStore = remember {
+        AppLockStore(context)
+    }
+
+    var pin by remember { mutableStateOf("") }
+    var confirmPin by remember { mutableStateOf("") }
+    var lockEnabled by remember {
+        mutableStateOf(appLockStore.isEnabled())
+    }
+    var pinSet by remember {
+        mutableStateOf(appLockStore.isPinSet())
+    }
+    var showPinForm by remember {
+        mutableStateOf(!appLockStore.isPinSet())
+    }
+    var message by remember {
+        mutableStateOf("")
+    }
+    var messageIsError by remember {
+        mutableStateOf(false)
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(FinoraBackground)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        Text(
+            text = "App Lock",
+            color = FinoraGreen,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold
+        )
+
+        Text(
+            text = "Protect your Finora account with a PIN.",
+            color = Color.Gray,
+            fontSize = 14.sp
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White
+            ),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = if (pinSet) {
+                        "PIN is configured"
+                    } else {
+                        "PIN is not configured"
+                    },
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (pinSet) {
+                        FinoraGreen
+                    } else {
+                        Color(0xFF555555)
+                    }
+                )
+
+                Text(
+                    text = if (pinSet) {
+                        "Your PIN is stored as a secure verifier. " +
+                                "You can change it below."
+                    } else {
+                        "Create a 4–6 digit PIN. You'll confirm it " +
+                                "before it's saved."
+                    },
+                    color = Color.Gray,
+                    fontSize = 14.sp
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Enable App Lock",
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Text(
+                            text = if (lockEnabled) {
+                                "Finora locks when you leave the app."
+                            } else {
+                                "PIN is saved, but the app is not locked."
+                            },
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    Switch(
+                        checked = lockEnabled,
+                        enabled = pinSet,
+                        onCheckedChange = { enabled ->
+                            if (appLockStore.setEnabled(enabled)) {
+                                lockEnabled = enabled
+                            }
+                        }
+                    )
+                }
+
+                if (!showPinForm) {
+                    Button(
+                        onClick = {
+                            pin = ""
+                            confirmPin = ""
+                            message = ""
+                            showPinForm = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = FinoraGreen
+                        )
+                    ) {
+                        Text(
+                            if (pinSet) "Change PIN" else "Set up PIN"
+                        )
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = {
+                            if (it.length <= 6 && it.all(Char::isDigit)) {
+                                pin = it
+                                message = ""
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Enter PIN") },
+                        singleLine = true,
+                        visualTransformation =
+                            PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.NumberPassword
+                        )
+                    )
+
+                    OutlinedTextField(
+                        value = confirmPin,
+                        onValueChange = {
+                            if (it.length <= 6 && it.all(Char::isDigit)) {
+                                confirmPin = it
+                                message = ""
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Confirm PIN") },
+                        singleLine = true,
+                        visualTransformation =
+                            PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.NumberPassword
+                        )
+                    )
+
+                    if (message.isNotBlank()) {
+                        Text(
+                            text = message,
+                            color = if (messageIsError) {
+                                ExpenseRed
+                            } else {
+                                FinoraGreen
+                            },
+                            fontSize = 13.sp
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            when {
+                                !pin.matches(Regex("^\\d{4,6}$")) -> {
+                                    message =
+                                        "Enter a PIN with 4–6 digits."
+                                    messageIsError = true
+                                }
+
+                                pin != confirmPin -> {
+                                    message = "The PINs do not match."
+                                    messageIsError = true
+                                }
+
+                                appLockStore.setPin(pin) -> {
+                                    pinSet = true
+                                    showPinForm = false
+                                    pin = ""
+                                    confirmPin = ""
+                                    message = "PIN saved successfully."
+                                    messageIsError = false
+                                }
+
+                                else -> {
+                                    message =
+                                        "Couldn't save the PIN. Please try again."
+                                    messageIsError = true
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = FinoraGreen
+                        )
+                    ) {
+                        Text("Save PIN")
+                    }
+
+                    TextButton(
+                        onClick = {
+                            pin = ""
+                            confirmPin = ""
+                            message = ""
+                            showPinForm = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        }
+
+        Text(
+            text = "Note: PIN setup is available now. " +
+                    "Finora will require the PIN after we connect " +
+                    "the app lock screen in the next step.",
+            color = Color.Gray,
+            fontSize = 12.sp
+        )
+    }
+}
+
+@Composable
 private fun PlaceholderScreen(
     modifier: Modifier = Modifier,
     title: String,
@@ -2714,5 +3025,98 @@ private fun monthLabel(calendar: Calendar): String {
         "MMMM yyyy",
         Locale.getDefault()
     ).format(calendar.time)
+}
+
+@Composable
+private fun FinoraLockScreen(
+    onUnlock: (String) -> Boolean
+) {
+    var pin by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(FinoraBackground),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AccountBalanceWallet,
+                    contentDescription = null,
+                    tint = FinoraGreen,
+                    modifier = Modifier.size(48.dp)
+                )
+
+                Text(
+                    text = "Finora is locked",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = FinoraGreen
+                )
+
+                Text(
+                    text = "Enter your PIN to continue",
+                    color = Color.Gray
+                )
+
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = {
+                        if (it.length <= 6 && it.all(Char::isDigit)) {
+                            pin = it
+                            error = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("PIN") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.NumberPassword
+                    )
+                )
+
+                if (error) {
+                    Text(
+                        text = "Incorrect PIN. Please try again.",
+                        color = ExpenseRed,
+                        fontSize = 13.sp
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        if (onUnlock(pin)) {
+                            pin = ""
+                            error = false
+                        } else {
+                            pin = ""
+                            error = true
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = FinoraGreen
+                    )
+                ) {
+                    Text("Unlock Finora")
+                }
+            }
+        }
+    }
 }
 

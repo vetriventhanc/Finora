@@ -1,5 +1,6 @@
 package com.example.finora.viewmodel
 
+import com.example.finora.data.SavingsGoalEntity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -53,9 +54,84 @@ class TransactionViewModel(
             initialValue = 0.0
         )
 
+    // ---------------- SAVINGS GOALS ----------------
+
+    val savingsGoals: StateFlow<List<SavingsGoalEntity>> =
+        repository.savingsGoals.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList()
+        )
+
     init {
         // Process scheduled transactions whenever this ViewModel is created.
         processDueRecurringTransactions()
+    }
+
+    // ---------------- SAVINGS GOALS ----------------
+
+    fun createSavingsGoal(
+        name: String,
+        targetAmount: Double,
+        targetDate: Long? = null,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                repository.createSavingsGoal(
+                    name = name,
+                    targetAmount = targetAmount,
+                    targetDate = targetDate
+                )
+                onSuccess()
+            } catch (exception: Exception) {
+                onError(
+                    exception.message
+                        ?: "Unable to create savings goal."
+                )
+            }
+        }
+    }
+
+    fun addSavings(
+        goalId: Int,
+        amount: Double,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                repository.addSavings(
+                    goalId = goalId,
+                    amount = amount
+                )
+                onSuccess()
+            } catch (exception: Exception) {
+                onError(
+                    exception.message
+                        ?: "Unable to add savings."
+                )
+            }
+        }
+    }
+
+    fun deleteSavingsGoal(
+        goal: SavingsGoalEntity,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                repository.deleteSavingsGoal(goal)
+                onSuccess()
+            } catch (exception: Exception) {
+                onError(
+                    exception.message
+                        ?: "Unable to delete savings goal."
+                )
+            }
+        }
     }
 
     // ---------------- BUDGETS ----------------

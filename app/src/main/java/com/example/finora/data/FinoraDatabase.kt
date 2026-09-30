@@ -1,3 +1,4 @@
+
 package com.example.finora.data
 
 import android.content.Context
@@ -11,9 +12,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         TransactionEntity::class,
         BudgetEntity::class,
-        RecurringTransactionEntity::class
+        RecurringTransactionEntity::class,
+        SavingsGoalEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class FinoraDatabase : RoomDatabase() {
@@ -24,6 +26,8 @@ abstract class FinoraDatabase : RoomDatabase() {
 
     abstract fun recurringTransactionDao():
             RecurringTransactionDao
+
+    abstract fun savingsGoalDao(): SavingsGoalDao
 
     companion object {
 
@@ -82,6 +86,26 @@ abstract class FinoraDatabase : RoomDatabase() {
                 }
             }
 
+        private val MIGRATION_3_4 =
+            object : Migration(3, 4) {
+                override fun migrate(
+                    database: SupportSQLiteDatabase
+                ) {
+                    database.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS savings_goals (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            name TEXT NOT NULL,
+                            targetAmount REAL NOT NULL,
+                            savedAmount REAL NOT NULL,
+                            targetDate INTEGER,
+                            createdAt INTEGER NOT NULL
+                        )
+                        """.trimIndent()
+                    )
+                }
+            }
+
         fun getDatabase(
             context: Context
         ): FinoraDatabase {
@@ -93,7 +117,8 @@ abstract class FinoraDatabase : RoomDatabase() {
                 )
                     .addMigrations(
                         MIGRATION_1_2,
-                        MIGRATION_2_3
+                        MIGRATION_2_3,
+                        MIGRATION_3_4
                     )
                     .build()
                     .also { database ->

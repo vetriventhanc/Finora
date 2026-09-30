@@ -161,6 +161,66 @@ class TransactionRepository(
         budgetDao.deleteBudgetsForMonth(month)
     }
 
+    // ---------------- SAVINGS GOALS ----------------
+
+    private val savingsGoalDao = database.savingsGoalDao()
+
+    val savingsGoals: Flow<List<SavingsGoalEntity>> =
+        savingsGoalDao.getAllGoals()
+
+    suspend fun createSavingsGoal(
+        name: String,
+        targetAmount: Double,
+        targetDate: Long? = null
+    ): Long {
+        val cleanName = name.trim()
+
+        require(cleanName.isNotEmpty()) {
+            "Please enter a savings goal name."
+        }
+
+        require(targetAmount > 0.0 && targetAmount.isFinite()) {
+            "Target amount must be greater than zero."
+        }
+
+        return savingsGoalDao.insertGoal(
+            SavingsGoalEntity(
+                name = cleanName,
+                targetAmount = targetAmount,
+                targetDate = targetDate
+            )
+        )
+    }
+
+    suspend fun addSavings(
+        goalId: Int,
+        amount: Double
+    ) {
+        require(amount > 0.0 && amount.isFinite()) {
+            "Savings amount must be greater than zero."
+        }
+
+        val goal = savingsGoalDao.getGoalById(goalId)
+            ?: throw IllegalArgumentException(
+                "Savings goal not found."
+            )
+
+        require(amount <= goal.targetAmount - goal.savedAmount) {
+            "Amount exceeds the remaining goal balance."
+        }
+
+        savingsGoalDao.addSavings(
+            goalId = goalId,
+            amount = amount
+        )
+    }
+
+    suspend fun deleteSavingsGoal(
+        goal: SavingsGoalEntity
+    ) {
+        savingsGoalDao.deleteGoal(goal)
+    }
+
     // ---------------- RECURRING TRANSACTIONS ----------------
 
     val recurringTransactions: Flow<List<RecurringTransactionEntity>> =
