@@ -762,6 +762,65 @@ private fun AnalyticsScreen(
             .sortedByDescending { it.amount }
     }
 
+    // Previous month for the spending comparison
+    val previousMonthKey = remember(selectedMonth) {
+        YearMonth.parse(selectedMonth)
+            .minusMonths(1)
+            .toString()
+    }
+
+    val previousMonthExpenses = remember(
+        transactions,
+        previousMonthKey
+    ) {
+        transactions
+            .filter {
+                monthKey(it.date) == previousMonthKey &&
+                        it.type == "EXPENSE"
+            }
+            .sumOf { it.amount }
+    }
+
+    // Monthly report details
+    val expenseTransactionCount = selectedTransactions.count {
+        it.type == "EXPENSE"
+    }
+
+    val topSpendingCategory = categoryData.firstOrNull()
+
+    val spendingDifference = expenses - previousMonthExpenses
+
+    val spendingChangePercent = if (previousMonthExpenses > 0.0) {
+        (spendingDifference / previousMonthExpenses) * 100.0
+    } else {
+        null
+    }
+
+    val spendingComparisonText = when {
+        previousMonthExpenses == 0.0 && expenses == 0.0 ->
+            "No expenses this month or last month."
+
+        previousMonthExpenses == 0.0 ->
+            "No expenses were recorded last month."
+
+        spendingDifference > 0.0 ->
+            "Up ${formatINR(spendingDifference)} " +
+                    "(${String.format(Locale.getDefault(), "%.1f", spendingChangePercent)}%) vs last month"
+
+        spendingDifference < 0.0 ->
+            "Down ${formatINR(-spendingDifference)} " +
+                    "(${String.format(Locale.getDefault(), "%.1f", -spendingChangePercent!!)}%) vs last month"
+
+        else ->
+            "Same spending as last month."
+    }
+
+    val comparisonColor = when {
+        spendingDifference > 0.0 -> ExpenseRed
+        spendingDifference < 0.0 -> IncomeGreen
+        else -> Color.Gray
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -902,6 +961,101 @@ private fun AnalyticsScreen(
                         },
                         color = Color.Gray,
                         fontSize = 13.sp
+                    )
+                }
+            }
+        }
+
+        item {
+            AnalyticsCard(title = "Monthly spending report") {
+                Text(
+                    text = "Your spending at a glance",
+                    color = Color.Gray,
+                    fontSize = 13.sp
+                )
+
+                Spacer(Modifier.height(6.dp))
+
+                // Top spending category
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Top category",
+                            color = Color.Gray,
+                            fontSize = 13.sp
+                        )
+
+                        Text(
+                            text = topSpendingCategory?.category
+                                ?: "No expenses yet",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 16.sp
+                        )
+                    }
+
+                    Text(
+                        text = topSpendingCategory?.let {
+                            formatINR(it.amount)
+                        } ?: formatINR(0.0),
+                        fontWeight = FontWeight.Bold,
+                        color = ExpenseRed
+                    )
+                }
+
+                HorizontalDivider(
+                    color = Color(0xFFEAEAEA)
+                )
+
+                // Expense transaction count
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Expense transactions",
+                        color = Color.Gray,
+                        fontSize = 13.sp
+                    )
+
+                    Text(
+                        text = expenseTransactionCount.toString(),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                HorizontalDivider(
+                    color = Color(0xFFEAEAEA)
+                )
+
+                // Previous month comparison
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Compared with previous month",
+                        color = Color.Gray,
+                        fontSize = 13.sp
+                    )
+
+                    Text(
+                        text = spendingComparisonText,
+                        color = comparisonColor,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp
+                    )
+
+                    Text(
+                        text = "Previous month: ${
+                            formatINR(previousMonthExpenses)
+                        }",
+                        color = Color.Gray,
+                        fontSize = 12.sp
                     )
                 }
             }
