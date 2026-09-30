@@ -1695,6 +1695,108 @@ private fun TransactionsScreen(
     transactions: List<TransactionEntity>,
     onDelete: (TransactionEntity) -> Unit
 ) {
+    var searchQuery by remember {
+        mutableStateOf("")
+    }
+
+    var selectedType by remember {
+        mutableStateOf("ALL")
+    }
+
+    var selectedCategory by remember {
+        mutableStateOf("All categories")
+    }
+
+    var selectedDateFilter by remember {
+        mutableStateOf("Any time")
+    }
+
+    var categoryMenuExpanded by remember {
+        mutableStateOf(false)
+    }
+
+    var dateMenuExpanded by remember {
+        mutableStateOf(false)
+    }
+
+    val categories = remember(transactions) {
+        transactions
+            .map { it.category }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sortedBy { it.lowercase() }
+    }
+
+    val filteredTransactions = remember(
+        transactions,
+        searchQuery,
+        selectedType,
+        selectedCategory,
+        selectedDateFilter
+    ) {
+        val now = System.currentTimeMillis()
+
+        val startOfCurrentMonth = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val last30Days = now - (30L * 24 * 60 * 60 * 1000)
+
+        transactions.filter { transaction ->
+
+            val query = searchQuery.trim()
+
+            val matchesSearch =
+                query.isBlank() ||
+                        transaction.title.contains(
+                            query,
+                            ignoreCase = true
+                        ) ||
+                        transaction.category.contains(
+                            query,
+                            ignoreCase = true
+                        ) ||
+                        transaction.note.contains(
+                            query,
+                            ignoreCase = true
+                        )
+
+            val matchesType =
+                selectedType == "ALL" ||
+                        transaction.type == selectedType
+
+            val matchesCategory =
+                selectedCategory == "All categories" ||
+                        transaction.category == selectedCategory
+
+            val matchesDate = when (selectedDateFilter) {
+                "This month" ->
+                    transaction.date >= startOfCurrentMonth
+
+                "Last 30 days" ->
+                    transaction.date >= last30Days &&
+                            transaction.date <= now
+
+                else -> true
+            }
+
+            matchesSearch &&
+                    matchesType &&
+                    matchesCategory &&
+                    matchesDate
+        }
+    }
+
+    val hasActiveFilters =
+        searchQuery.isNotBlank() ||
+                selectedType != "ALL" ||
+                selectedCategory != "All categories" ||
+                selectedDateFilter != "Any time"
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -1702,23 +1804,268 @@ private fun TransactionsScreen(
             .padding(top = 24.dp)
     ) {
         Text(
-            "Transactions",
+            text = "Transactions",
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold
         )
 
         Spacer(Modifier.height(16.dp))
 
-        if (transactions.isEmpty()) {
-            EmptyTransactions()
+        // SEARCH
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = {
+                searchQuery = it
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = {
+                Text("Search transactions")
+            },
+            placeholder = {
+                Text("Title, category, or note")
+            },
+            singleLine = true,
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    TextButton(
+                        onClick = {
+                            searchQuery = ""
+                        }
+                    ) {
+                        Text("Clear")
+                    }
+                }
+            }
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        // TRANSACTION TYPE FILTER
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilterChip(
+                selected = selectedType == "ALL",
+                onClick = {
+                    selectedType = "ALL"
+                },
+                label = {
+                    Text("All")
+                }
+            )
+
+            FilterChip(
+                selected = selectedType == "INCOME",
+                onClick = {
+                    selectedType = "INCOME"
+                },
+                label = {
+                    Text("Income")
+                }
+            )
+
+            FilterChip(
+                selected = selectedType == "EXPENSE",
+                onClick = {
+                    selectedType = "EXPENSE"
+                },
+                label = {
+                    Text("Expense")
+                }
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // CATEGORY AND DATE FILTERS
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier.weight(1f)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        categoryMenuExpanded = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = selectedCategory,
+                        maxLines = 1
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = categoryMenuExpanded,
+                    onDismissRequest = {
+                        categoryMenuExpanded = false
+                    }
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Text("All categories")
+                        },
+                        onClick = {
+                            selectedCategory = "All categories"
+                            categoryMenuExpanded = false
+                        }
+                    )
+
+                    categories.forEach { category ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(category)
+                            },
+                            onClick = {
+                                selectedCategory = category
+                                categoryMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier.weight(1f)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        dateMenuExpanded = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = selectedDateFilter,
+                        maxLines = 1
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = dateMenuExpanded,
+                    onDismissRequest = {
+                        dateMenuExpanded = false
+                    }
+                ) {
+                    listOf(
+                        "Any time",
+                        "This month",
+                        "Last 30 days"
+                    ).forEach { dateFilter ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(dateFilter)
+                            },
+                            onClick = {
+                                selectedDateFilter = dateFilter
+                                dateMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // RESULTS COUNT AND RESET
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${filteredTransactions.size} transactions",
+                color = Color.Gray,
+                fontSize = 13.sp
+            )
+
+            if (hasActiveFilters) {
+                TextButton(
+                    onClick = {
+                        searchQuery = ""
+                        selectedType = "ALL"
+                        selectedCategory = "All categories"
+                        selectedDateFilter = "Any time"
+                    }
+                ) {
+                    Text(
+                        text = "Clear filters",
+                        color = FinoraGreen
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // FILTERED TRANSACTION LIST
+        if (filteredTransactions.isEmpty()) {
+            if (transactions.isEmpty()) {
+                EmptyTransactions()
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ReceiptLong,
+                            contentDescription = null,
+                            tint = Color.LightGray,
+                            modifier = Modifier.size(48.dp)
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+
+                        Text(
+                            text = "No matching transactions",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 17.sp
+                        )
+
+                        Spacer(Modifier.height(6.dp))
+
+                        Text(
+                            text = "Try changing your search or filters.",
+                            color = Color.Gray,
+                            fontSize = 14.sp
+                        )
+
+                        if (hasActiveFilters) {
+                            Spacer(Modifier.height(12.dp))
+
+                            OutlinedButton(
+                                onClick = {
+                                    searchQuery = ""
+                                    selectedType = "ALL"
+                                    selectedCategory = "All categories"
+                                    selectedDateFilter = "Any time"
+                                }
+                            ) {
+                                Text("Clear filters")
+                            }
+                        }
+                    }
+                }
+            }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f, fill = false),
                 contentPadding = PaddingValues(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(
-                    transactions,
+                    items = filteredTransactions,
                     key = { it.id }
                 ) { transaction ->
                     TransactionRow(
