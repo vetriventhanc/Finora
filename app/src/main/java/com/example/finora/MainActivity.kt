@@ -1447,27 +1447,71 @@ private fun BudgetCard(
         .getCategorySpending(budget.category, budget.month)
         .collectAsStateWithLifecycle(initialValue = 0.0)
 
-    val progress = if (budget.amount > 0.0) {
-        (spending / budget.amount).toFloat().coerceIn(0f, 1f)
+    val budgetAmount = budget.amount.coerceAtLeast(0.0)
+    val percentage = if (budgetAmount > 0.0) {
+        spending / budgetAmount
     } else {
-        0f
+        0.0
     }
-    val exceeded = spending > budget.amount
-    val progressColor = if (exceeded) ExpenseRed else FinoraGreen
-    val remaining = (budget.amount - spending).coerceAtLeast(0.0)
+
+    val progress = percentage
+        .toFloat()
+        .coerceIn(0f, 1f)
+
+    val exceeded = spending > budgetAmount
+    val limitReached = spending >= budgetAmount
+    val approachingLimit = percentage >= 0.80 && !limitReached
+
+    val remaining = (budgetAmount - spending).coerceAtLeast(0.0)
+    val exceededAmount = (spending - budgetAmount).coerceAtLeast(0.0)
+
+    val statusColor = when {
+        exceeded -> ExpenseRed
+        limitReached -> Color(0xFFF97316)
+        approachingLimit -> Color(0xFFF59E0B)
+        else -> FinoraGreen
+    }
+
+    val statusTitle = when {
+        exceeded -> "Budget exceeded"
+        limitReached -> "Budget limit reached"
+        approachingLimit -> "Approaching budget limit"
+        else -> "Budget on track"
+    }
+
+    val statusMessage = when {
+        exceeded ->
+            "You have spent ${formatINR(exceededAmount)} over your limit."
+
+        limitReached ->
+            "You have used 100% of this month's budget."
+
+        approachingLimit ->
+            "${formatINR(remaining)} remaining. You're getting close to your limit."
+
+        else ->
+            "${formatINR(remaining)} remaining for this month."
+    }
+
+    val progressColor = statusColor
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize(),
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        )
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Category and actions
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Box(
                     modifier = Modifier
                         .size(42.dp)
@@ -1486,15 +1530,18 @@ private fun BudgetCard(
 
                 Spacer(Modifier.width(12.dp))
 
-                Column(Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text(
-                        budget.category,
+                        text = budget.category,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
+
                     Text(
-                        if (exceeded) "Budget exceeded" else "Monthly limit",
-                        color = if (exceeded) ExpenseRed else Color.Gray,
+                        text = "Monthly budget",
+                        color = Color.Gray,
                         fontSize = 12.sp
                     )
                 }
@@ -1516,31 +1563,90 @@ private fun BudgetCard(
                 }
             }
 
+            // Budget alert banner
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        color = statusColor.copy(alpha = 0.10f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .padding(12.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = when {
+                        exceeded -> "⚠"
+                        limitReached -> "!"
+                        approachingLimit -> "!"
+                        else -> "✓"
+                    },
+                    color = statusColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+
+                Spacer(Modifier.width(10.dp))
+
+                Column {
+                    Text(
+                        text = statusTitle,
+                        color = statusColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+
+                    Text(
+                        text = statusMessage,
+                        color = Color(0xFF555555),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            // Spent and budget amounts
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
-                    Text("Spent", color = Color.Gray, fontSize = 12.sp)
                     Text(
-                        formatINR(spending),
+                        text = "Spent",
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+
+                    Text(
+                        text = formatINR(spending),
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
-                        color = if (exceeded) ExpenseRed else Color(0xFF252525)
+                        color = if (limitReached) {
+                            statusColor
+                        } else {
+                            Color(0xFF252525)
+                        }
                     )
                 }
 
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("Budget", color = Color.Gray, fontSize = 12.sp)
+                Column(
+                    horizontalAlignment = Alignment.End
+                ) {
                     Text(
-                        formatINR(budget.amount),
+                        text = "Budget",
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+
+                    Text(
+                        text = formatINR(budgetAmount),
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp
                     )
                 }
             }
 
+            // Spending progress
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier
@@ -1551,23 +1657,25 @@ private fun BudgetCard(
                 strokeCap = StrokeCap.Round
             )
 
+            // Percentage and remaining amount
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    "${((spending / budget.amount) * 100).toInt()}% used",
-                    color = if (exceeded) ExpenseRed else Color.Gray,
-                    fontSize = 12.sp
+                    text = "${kotlin.math.ceil(percentage * 100).toInt()}% used",
+                    color = statusColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
 
                 Text(
-                    if (exceeded) {
-                        "${formatINR(spending - budget.amount)} over budget"
+                    text = if (exceeded) {
+                        "${formatINR(exceededAmount)} over"
                     } else {
                         "${formatINR(remaining)} left"
                     },
-                    color = if (exceeded) ExpenseRed else FinoraGreen,
+                    color = statusColor,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -1575,7 +1683,6 @@ private fun BudgetCard(
         }
     }
 }
-
 @Composable
 private fun BudgetEditorDialog(
     month: String,
