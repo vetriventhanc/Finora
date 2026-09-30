@@ -11,8 +11,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.material.icons.filled.CalendarMonth
 import android.os.Bundle
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -55,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.finora.data.FinoraDatabase
+import androidx.room.withTransaction
 import com.example.finora.data.BudgetEntity
 import com.example.finora.data.TransactionEntity
 import com.example.finora.data.TransactionRepository
@@ -243,8 +249,8 @@ private fun FinoraApp(viewModel: TransactionViewModel) {
 
                 // NEW: Recurring Transactions tab
                 NavigationBarItem(
-                    selected = selectedTab == 4,
-                    onClick = { selectedTab = 4 },
+                    selected = selectedTab == 5,
+                    onClick = { selectedTab = 5 },
                     icon = {
                         Icon(
                             Icons.Default.Repeat,
@@ -255,8 +261,8 @@ private fun FinoraApp(viewModel: TransactionViewModel) {
                 )
 
                 NavigationBarItem(
-                    selected = selectedTab == 5,
-                    onClick = { selectedTab = 5 },
+                    selected = selectedTab == 6,
+                    onClick = { selectedTab = 6 },
                     icon = {
                         Icon(
                             Icons.Default.Person,
@@ -308,8 +314,15 @@ private fun FinoraApp(viewModel: TransactionViewModel) {
                 viewModel = viewModel
             )
 
-            6 -> AppLockSettingsScreen(
-                modifier = Modifier.padding(innerPadding)
+            6 -> ProfileAndBackupScreen(
+                modifier = Modifier.padding(innerPadding),
+                database = FinoraDatabase.getDatabase(context),
+                onOpenAppLock = { selectedTab = 7 }
+            )
+
+            7 -> AppLockSettingsScreen(
+                modifier = Modifier.padding(innerPadding),
+                onBack = { selectedTab = 6 }
             )
         }
     }
@@ -740,11 +753,157 @@ private data class CategoryData(
     val amount: Double
 )
 
+private fun createMonthlyReportPdf(
+    monthLabel: String,
+    transactions: List<TransactionEntity>,
+    income: Double,
+    expenses: Double,
+    savings: Double,
+    savingsRate: Double,
+    categories: List<CategoryData>
+): ByteArray {
+    val document = PdfDocument()
+    val pageWidth = 595
+    val pageHeight = 842
+    val left = 44f
+    val right = 551f
+    val lineHeight = 20f
+
+    val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.rgb(23, 107, 77)
+        textSize = 22f
+        typeface = android.graphics.Typeface.create(
+            android.graphics.Typeface.DEFAULT,
+            android.graphics.Typeface.BOLD
+        )
+    }
+    val headingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.BLACK
+        textSize = 14f
+        typeface = android.graphics.Typeface.create(
+            android.graphics.Typeface.DEFAULT,
+            android.graphics.Typeface.BOLD
+        )
+    }
+    val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.DKGRAY
+        textSize = 10f
+    }
+    val smallPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.GRAY
+        textSize = 9f
+    }
+
+    val lines = mutableListOf<Pair<String, Paint>>()
+    lines += "FINORA — MONTHLY FINANCIAL REPORT" to titlePaint
+    lines += monthLabel to headingPaint
+    lines += "Generated: ${SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date())}" to smallPaint
+    lines += "" to bodyPaint
+    lines += "SUMMARY" to headingPaint
+    lines += "Total income: ${formatINR(income)}" to bodyPaint
+    lines += "Total expenses: ${formatINR(expenses)}" to bodyPaint
+    lines += "Net savings: ${formatINR(savings)}" to bodyPaint
+    lines += "Savings rate: ${"%.1f".format(Locale.getDefault(), savingsRate)}%" to bodyPaint
+    lines += "" to bodyPaint
+    lines += "SPENDING BY CATEGORY" to headingPaint
+    if (categories.isEmpty()) {
+        lines += "No expenses recorded for this month." to bodyPaint
+    } else {
+        categories.forEach { category ->
+            lines += "${category.category}: ${formatINR(category.amount)}" to bodyPaint
+        }
+    }
+    lines += "" to bodyPaint
+    lines += "TRANSACTIONS (${transactions.size})" to headingPaint
+    if (transactions.isEmpty()) {
+        lines += "No transactions recorded for this month." to bodyPaint
+    } else {
+        lines += "Date | Type | Category | Description | Amount" to smallPaint
+        transactions.sortedByDescending { it.date }.forEach { transaction ->
+            val date = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+                .format(Date(transaction.date))
+            val description = transaction.title.replace('\n', ' ').take(28)
+            val category = transaction.category.replace('\n', ' ').take(16)
+            val note = transaction.note.replace('\n', ' ').take(32)
+            lines += "$date | ${transaction.type} | $category | $description | ${formatINR(transaction.amount)}" to bodyPaint
+            if (note.isNotBlank()) lines += "   Note: $note" to smallPaint
+        }
+    }
+
+    var lineIndex = 0
+    var pageNumber = 1
+    val usableTop = 54f
+    val usableBottom = 800f
+    val linesPerPage = ((usableBottom - usableTop) / lineHeight).toInt()
+
+    while (lineIndex < lines.size) {
+        val pageInfo = PdfDocument.PageInfo.Builder(
+            pageWidth, pageHeight, pageNumber
+        ).create()
+        val page = document.startPage(pageInfo)
+        val canvas = page.canvas
+        var y = usableTop
+
+        repeat(linesPerPage) {
+            if (lineIndex < lines.size) {
+                val (text, paint) = lines[lineIndex]
+                if (text.isNotEmpty()) {
+                    val maxWidth = right - left
+                    var rendered = text
+                    while (paint.measureText(rendered) > maxWidth && rendered.length > 8) {
+                        rendered = rendered.dropLast(1)
+                    }
+                    canvas.drawText(rendered, left, y, paint)
+                }
+                y += lineHeight
+                lineIndex++
+            }
+        }
+
+        canvas.drawText("Finora • Page $pageNumber", left, 824f, smallPaint)
+        document.finishPage(page)
+        pageNumber++
+    }
+
+    val output = java.io.ByteArrayOutputStream()
+    document.writeTo(output)
+    document.close()
+    return output.toByteArray()
+}
+
 @Composable
 private fun AnalyticsScreen(
     modifier: Modifier = Modifier,
     transactions: List<TransactionEntity>
 ) {
+    val context = LocalContext.current
+    var reportMonthLabel by remember { mutableStateOf("") }
+    var reportPdfBytes by remember { mutableStateOf<ByteArray?>(null) }
+
+    val pdfExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        try {
+            val bytes = reportPdfBytes
+                ?: throw IllegalStateException("Report data is unavailable.")
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(bytes)
+            } ?: throw IllegalStateException("Unable to open the selected file.")
+            Toast.makeText(
+                context,
+                "PDF report exported successfully",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (exception: Exception) {
+            Toast.makeText(
+                context,
+                "PDF export failed: ${exception.localizedMessage ?: "Unknown error"}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     val calendar = remember {
         Calendar.getInstance()
     }
@@ -965,6 +1124,34 @@ private fun AnalyticsScreen(
                         )
                     }
                 }
+            }
+        }
+
+        item {
+            FilledTonalButton(
+                onClick = {
+                    reportMonthLabel = availableMonths.firstOrNull {
+                        it.first == selectedMonth
+                    }?.second ?: selectedMonth
+                    reportPdfBytes = createMonthlyReportPdf(
+                        monthLabel = reportMonthLabel,
+                        transactions = selectedTransactions,
+                        income = income,
+                        expenses = expenses,
+                        savings = savings,
+                        savingsRate = savingsRate,
+                        categories = categoryData
+                    )
+                    val safeMonth = selectedMonth.replace("-", "_")
+                    pdfExportLauncher.launch("finora_monthly_report_$safeMonth.pdf")
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = FinoraGreen,
+                    contentColor = Color.White
+                )
+            ) {
+                Text("Export Monthly Report (PDF)")
             }
         }
 
@@ -2019,12 +2206,86 @@ private fun BudgetEditorDialog(
 // TRANSACTIONS
 // -----------------------------------------------------------------------------
 
+private fun buildTransactionsCsv(
+    transactions: List<TransactionEntity>
+): String {
+    fun escapeCsv(value: String): String {
+        val escaped = value.replace("\"", "\"\"")
+        return if (
+            escaped.contains(",") ||
+            escaped.contains("\"") ||
+            escaped.contains("\n") ||
+            escaped.contains("\r")
+        ) {
+            "\"" + escaped + "\""
+        } else {
+            escaped
+        }
+    }
+
+    val dateFormat = SimpleDateFormat(
+        "yyyy-MM-dd HH:mm:ss",
+        Locale.getDefault()
+    )
+
+    val header = listOf(
+        "ID", "Title", "Amount", "Type", "Category", "Date", "Note"
+    ).joinToString(",")
+
+    val rows = transactions
+        .sortedByDescending { it.date }
+        .map { transaction ->
+            listOf(
+                transaction.id.toString(),
+                transaction.title,
+                transaction.amount.toString(),
+                transaction.type,
+                transaction.category,
+                dateFormat.format(Date(transaction.date)),
+                transaction.note
+            ).joinToString(",") { escapeCsv(it) }
+        }
+
+    return (listOf(header) + rows).joinToString("\r\n")
+}
+
 @Composable
 private fun TransactionsScreen(
     modifier: Modifier = Modifier,
     transactions: List<TransactionEntity>,
     onDelete: (TransactionEntity) -> Unit
 ) {
+    val context = LocalContext.current
+    var transactionsToExport by remember {
+        mutableStateOf<List<TransactionEntity>>(emptyList())
+    }
+
+    val csvExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+
+        try {
+            val csv = buildTransactionsCsv(transactionsToExport)
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
+                output.write(csv.toByteArray(Charsets.UTF_8))
+            } ?: throw IllegalStateException("Unable to open the selected file.")
+
+            Toast.makeText(
+                context,
+                "CSV exported successfully",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (exception: Exception) {
+            Toast.makeText(
+                context,
+                "CSV export failed: ${exception.localizedMessage ?: "Unknown error"}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     var searchQuery by remember {
         mutableStateOf("")
     }
@@ -2133,11 +2394,35 @@ private fun TransactionsScreen(
             .padding(horizontal = 20.dp)
             .padding(top = 24.dp)
     ) {
-        Text(
-            text = "Transactions",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Transactions",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+
+            FilledTonalButton(
+                onClick = {
+                    transactionsToExport = filteredTransactions
+                    val filenameDate = SimpleDateFormat(
+                        "yyyyMMdd_HHmm",
+                        Locale.getDefault()
+                    ).format(Date())
+                    csvExportLauncher.launch("finora_transactions_$filenameDate.csv")
+                },
+                enabled = filteredTransactions.isNotEmpty(),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = FinoraGreen,
+                    contentColor = Color.White
+                )
+            ) {
+                Text("Export CSV")
+            }
+        }
 
         Spacer(Modifier.height(16.dp))
 
@@ -2717,7 +3002,8 @@ private fun AddTransactionDialog(
 
 @Composable
 private fun AppLockSettingsScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onBack: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val appLockStore = remember {
@@ -2749,6 +3035,10 @@ private fun AppLockSettingsScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
+        TextButton(onClick = onBack) {
+            Text("← Back to Profile", color = FinoraGreen)
+        }
+
         Text(
             text = "App Lock",
             color = FinoraGreen,

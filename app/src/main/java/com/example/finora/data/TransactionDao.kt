@@ -68,4 +68,11 @@ interface TransactionDao {
     // Delete all transactions
     @Query("DELETE FROM transactions")
     suspend fun deleteAllTransactions()
+
+    @Query("SELECT * FROM transactions ORDER BY date DESC")
+    suspend fun getAllTransactionsOnce(): List<TransactionEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTransactions(items: List<TransactionEntity>)
+
 }

@@ -82,4 +82,14 @@ interface BudgetDao {
         """
     )
     suspend fun deleteBudgetsForMonth(month: String)
+
+    @Query("SELECT * FROM budgets ORDER BY month DESC, category COLLATE NOCASE ASC")
+    suspend fun getAllBudgetsOnce(): List<BudgetEntity>
+
+    @Query("DELETE FROM budgets")
+    suspend fun deleteAllBudgets()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBudgets(items: List<BudgetEntity>)
+
 }

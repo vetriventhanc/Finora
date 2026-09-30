@@ -1,5 +1,6 @@
 package com.example.finora.data
 
+import androidx.room.OnConflictStrategy
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
@@ -68,4 +69,14 @@ interface RecurringTransactionDao {
         id: Int,
         isActive: Boolean
     )
+
+    @Query("SELECT * FROM recurring_transactions ORDER BY id ASC")
+    suspend fun getAllRecurringOnce(): List<RecurringTransactionEntity>
+
+    @Query("DELETE FROM recurring_transactions")
+    suspend fun deleteAllRecurring()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRecurring(items: List<RecurringTransactionEntity>)
+
 }

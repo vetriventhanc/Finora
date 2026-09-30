@@ -32,4 +32,14 @@ interface SavingsGoalDao {
         WHERE id = :goalId
     """)
     suspend fun addSavings(goalId: Int, amount: Double)
+
+    @Query("SELECT * FROM savings_goals ORDER BY createdAt DESC")
+    suspend fun getAllGoalsOnce(): List<SavingsGoalEntity>
+
+    @Query("DELETE FROM savings_goals")
+    suspend fun deleteAllGoals()
+
+    @Insert
+    suspend fun insertGoals(items: List<SavingsGoalEntity>)
+
 }

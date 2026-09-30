@@ -5,3 +5,24 @@ local.properties
 *.iml
 .DS_Store
 gradle/wrapper/gradle-*-bin.zip
+
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*service-account*.json
+
+# Android signing keys
+*.jks
+*.keystore
+
+# Local financial data and backups
+*backup*.json
+*transactions*.csv
+*.db
+*.sqlite
+*.sqlite3
+
+# Local build output
+local.properties
